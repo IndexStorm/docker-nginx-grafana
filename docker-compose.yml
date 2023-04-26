@@ -1,0 +1,98 @@
+version: '3.9'
+
+networks:
+  nginx:
+    name: 'nginx'
+    external: true
+  grafana:
+    name: 'grafana'
+    external: true
+
+services:
+  nginx:
+    build: nginx
+    container_name: nginx
+    restart: always
+    depends_on:
+      - api
+    volumes:
+      - './app.conf:/etc/nginx/conf.d/default.conf'
+    networks:
+      - nginx
+    ports:
+      - '80:80'
+    environment:
+      NGINX_ENTRYPOINT_QUIET_LOGS: "${NGINX_QUIET:-1}"
+    logging:
+      driver: json-file
+      options:
+        max-size: 4m
+        max-file: "1"
+        tag: nginx
+  loki:
+    user: "1000:1000"
+    restart: always
+    image: grafana/loki
+    container_name: loki
+    networks:
+      - grafana
+    volumes:
+      - './data/loki:/loki'
+      - './loki/loki.yml:/etc/config/loki.yml:ro'
+    entrypoint:
+      - /usr/bin/loki
+      - -config.file=/etc/config/loki.yml
+    logging:
+      #driver: json-file
+      driver: none
+      options:
+        max-size: 4m
+        max-file: "1"
+        tag: loki
+  promtail:
+    restart: always
+    image: grafana/promtail
+    container_name: promtail
+    depends_on:
+      - loki
+    networks:
+      - grafana
+    volumes:
+      - './data/promtail:/mnt/promtail'
+      - './promtail/promtail.yml:/etc/config/promtail.yml:ro'
+      - '/var/lib/docker/containers:/var/lib/docker/containers:ro'
+    entrypoint:
+      - /usr/bin/promtail
+      - -config.file=/etc/config/promtail.yml
+    logging:
+      #driver: json-file
+      driver: none
+      options:
+        max-size: 4m
+        max-file: "1"
+        tag: promtail
+  grafana:
+    user: "1000:1000"
+    restart: always
+    image: grafana/grafana
+    container_name: grafana
+    environment:
+      GF_LOG_LEVEL: warn
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_USER:?}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:?}"
+      GF_SERVER_ROOT_URL: "${GRAFANA_SERVER_URL:?}"
+    depends_on:
+      - loki
+    networks:
+      - nginx
+      - grafana
+    volumes:
+      - './data/grafana:/var/lib/grafana'
+      - './grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro'
+    logging:
+      #driver: json-file
+      driver: none
+      options:
+        max-size: 4m
+        max-file: "1"
+        tag: grafana
